@@ -69,6 +69,7 @@ mod tests {
     use proton_shared::node_def::*;
     use proton_shared::node_value::*;
     use proton_shared::NODE_DEF_REGISTRY;
+    use super::*;
 
     #[test]
     fn evaluates_function() {
@@ -78,15 +79,10 @@ mod tests {
                 return vec![NodeValue::Count(count_1 + count_2)];
             }));
 
-        let node = super::Node {
-            id: 1,
-            def_name: "test_def".to_owned(),
-            inputs: vec![
-                super::NodeInput::Const(NodeValue::Count(1)),
-                super::NodeInput::Wire(super::NodeOutputRef {
-                    from_node_id: 2,
-                    node_output_index: 0
-                })
+        let node = make_node!{
+            1: test_def[
+                i64{1},
+                Wire{2, 0}
             ]
         };
         let map = map!{super::NodeOutputRef {from_node_id: 2, node_output_index: 0} => NodeValue::Count(2)};

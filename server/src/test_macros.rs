@@ -14,12 +14,19 @@ macro_rules! map(
 /// Converts a rust variable type to the NodeValueType that could hold it
 macro_rules! node_value_of {
     ($val:ident: TriggerSignal) => {NodeValue::Trigger($val)};
+    ($val:literal: TriggerSignal) => {NodeValue::Trigger($val)};
     ($val:ident: bool) => {NodeValue::Toggle($val)};
+    ($val:literal: bool) => {NodeValue::Toggle($val)};
     ($val:ident: i64) => {NodeValue::Count($val)};
+    ($val:literal: i64) => {NodeValue::Count($val)};
     ($val:ident: u32) => {NodeValue::ConstrainedMagnitude($val)};
+    ($val:literal: u32) => {NodeValue::ConstrainedMagnitude($val)};
     ($val:ident: f64) => {NodeValue::UnconstrainedMagnitude($val)};
+    ($val:literal: f64) => {NodeValue::UnconstrainedMagnitude($val)};
     ($val:ident: NodeColor) => {NodeValue::Color($val)};
+    ($val:literal: NodeColor) => {NodeValue::Color($val)};
     ($val:ident: Box<String>) => {NodeValue::Text($val)};
+    ($val:literal: Box<String>) => {NodeValue::Text($val)};
 }
 
 /// Converts a rust variable type to the NodeValueType that could hold it
@@ -129,5 +136,36 @@ macro_rules! node_def_from_fn {
             output: node_output_def_from_tuple!($($o),+),
             runner: NodeDefRunner::Function(wrap_node_function!(|$($name: $type),+| $body))
         }
+    };
+}
+
+/// Instantiates a node with an Id, a def, and inputs.
+macro_rules! make_node {
+    (@input Wire{$nodeid:literal, $output:literal}) => {
+        NodeInput::Wire(NodeOutputRef {
+            from_node_id: $nodeid,
+            node_output_index: $output
+        })
+    };
+    (@input $type:ident{$val:literal}) => {
+        NodeInput::Const(node_value_of!($val: $type))
+    };
+    ($id:literal: $def:ident[$($type:ident{$($arg:literal),+}),+]) => {
+        Node {
+            id: $id,
+            def_name: stringify!($def).to_string(),
+            inputs: vec![
+                $(make_node!(@input $type{$($arg),+})),+
+            ]
+        }
+    };
+}
+
+/// Instantiates one or more nodes with Ids, defs, and inputs.
+macro_rules! make_nodes {
+    ($($id:literal: $def:ident[$($type:ident{$($arg:literal),+}),+]),+) => {
+        vec![
+            $(make_node!($id: $def[$($type{$($arg),+}),+])),+
+        ]
     };
 }
