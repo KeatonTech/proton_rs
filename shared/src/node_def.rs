@@ -40,6 +40,7 @@ pub struct NodeDefBasicDescription {
 /// Options for executing a Node, as specified in a NodeDef.
 pub enum NodeDefRunner {
     Function(fn(Vec<&NodeValue>) -> Vec<NodeValue>),
+    Executor(fn() -> Box<dyn NodeExecutor>),
     OutputDevice(NodeDefOutputRunner),
 }
 
@@ -65,4 +66,8 @@ impl std::cmp::PartialEq for NodeDefRunner {
         // TODO (see if there's a way to actually make this work)
         true
     }
+}
+
+pub trait NodeExecutor: Send + Sync {
+    fn execute(&self, inputs: Vec<&NodeValue>) -> Vec<NodeValue>;
 }

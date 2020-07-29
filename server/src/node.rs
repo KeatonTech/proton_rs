@@ -2,7 +2,6 @@ use proton_shared::node_def::*;
 use proton_shared::node_value::*;
 use proton_shared::NODE_DEF_REGISTRY;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Instance of an executable function as represented in a compute graph.
 /// Each Node has a type (a NodeDef) that defines what inputs to take, what outputs
@@ -31,7 +30,19 @@ pub struct NodeOutputRef {
 }
 
 impl Node {
-    pub fn evaluate(&self, evaluated_outputs: &HashMap<NodeOutputRef, NodeValue>) -> Option<Vec<NodeValue>> {
+    pub fn prepare(&self) -> Option<Box<dyn NodeExecutor>> {
+        let def = NODE_DEF_REGISTRY.get_def(&self.def_name);
+        match &def.runner {
+            NodeDefRunner::Executor(ctor) => Some(ctor()),
+            _ => None
+        }
+    }
+
+    pub fn evaluate(
+        &self, 
+        evaluated_outputs: &HashMap<NodeOutputRef, NodeValue>, 
+        executor: Option<Box<dyn NodeExecutor>>
+    ) -> Vec<NodeValue> {
         let mut input_vals = Vec::<&NodeValue>::with_capacity(self.inputs.len());
         for input in &self.inputs {
             let input_val = match input {
@@ -43,10 +54,11 @@ impl Node {
 
         let def = NODE_DEF_REGISTRY.get_def(&self.def_name);
         match &def.runner {
-            NodeDefRunner::Function(func) => Some(func(input_vals)),
+            NodeDefRunner::Function(func) => func(input_vals),
+            NodeDefRunner::Executor(_) => executor.unwrap().execute(input_vals),
             NodeDefRunner::OutputDevice(od) => {
                 (od.run)(input_vals);
-                None
+                vec![]
             },
         }
     }
@@ -56,7 +68,6 @@ impl Node {
 mod tests {
     use proton_shared::node_def::*;
     use proton_shared::node_value::*;
-    use std::sync::Arc;
     use proton_shared::NODE_DEF_REGISTRY;
 
     macro_rules! map(
@@ -126,7 +137,7 @@ mod tests {
             ]
         };
         let map = map!{super::NodeOutputRef {from_node_id: 2, node_output_index: 0} => NodeValue::Count(2)};
-        let result = node.evaluate(&map).unwrap();
+        let result = node.evaluate(&map, None);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], NodeValue::Count(3));
     }

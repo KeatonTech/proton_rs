@@ -2,10 +2,10 @@ use super::node::{Node, NodeInput, NodeOutputRef, NodeInputDiscriminants};
 use proton_shared::node_value::*;
 use std::collections::{HashMap, HashSet};
 use std::iter::Iterator;
-use crossbeam_channel::bounded;
 use std::cmp::min;
-use std::sync::RwLockReadGuard;
-use super::threadrunner::Threadrunner;
+use rayon::prelude::*;
+use rayon::{ThreadPool, ThreadPoolBuilder};
+use parking_lot::RwLock;
 
 /// Represents the current state of a ComputeGraph, including any errors that may
 /// prevent it from executing.
@@ -16,8 +16,6 @@ pub enum ComputeGraphState {
     ErrInvalidWire {from_node: u32, to_missing_node: u32},
     Ready
 }
-
-type EvaluatedOutputsReader = HashMap<NodeOutputRef, NodeValue>;
 
 /// A ComputeGraph is a set of connected nodes, where each node is a compute operation
 /// that can rely on the results of other compute operations as inputs. ComputeGraphs
@@ -31,14 +29,9 @@ pub struct ComputeGraph {
     /// by definition be executed in parallel. Computed lazily.
     waves: Option<Vec<Vec<u32>>>,
 
-    /// Maximum number of operations that can execute simultaneously. Upper bound
-    /// on the useful number of threads.
-    runner: Option<Threadrunner<(Node, EvaluatedOutputsReader), Option<Vec<NodeValue>>>>,
-}
-
-fn process_node(input: &(Node, EvaluatedOutputsReader)) -> Option<Vec<NodeValue>> {
-    let (node, evaluated_outputs) = input;
-    node.evaluate(&evaluated_outputs)
+    /// Multithreaded task runner that takes an array of inputs and produces an
+    /// array of outputs based on the provided Node evaluator function.
+    runner: Option<ThreadPool>,
 }
 
 impl ComputeGraph {
@@ -87,12 +80,10 @@ impl ComputeGraph {
             return false;
         }
 
+        // Prepare a threadpool for execution
         let max_parallel = maybe_max_parallel.unwrap();
         let thread_count = min(max_parallel, max_threads);
-        self.runner = Some(Threadrunner::new_with_max_batch_size(
-            thread_count as u32, 
-            max_parallel as usize, 
-            process_node));
+        self.runner = Some(ThreadPoolBuilder::new().num_threads(thread_count.into()).build().unwrap());
         return true;
     }
 
@@ -165,7 +156,37 @@ impl ComputeGraph {
 
     /// Executes the graph using at most the specified number of threads.
     /// Returns None if execution could not complete.
-    pub fn execute(&self, max_thread_count: u16) -> Option<HashMap<NodeOutputRef, NodeValue>> {
-        None
+    pub fn execute(&self) -> Result<HashMap<NodeOutputRef, NodeValue>, &str> {
+        if self.waves.is_none() || self.runner.is_none() {
+            return Err("Must call .prepare() before executing the graph.");
+        }
+
+        let ret = RwLock::new(HashMap::<NodeOutputRef, NodeValue>::new());
+        self.runner.as_ref().unwrap().install(|| {
+            for wave in self.waves.as_ref().unwrap() {
+                let mut results = Vec::<Vec<NodeValue>>::new();
+                {
+                    let reader = ret.read();
+                    wave
+                        .par_iter()
+                        .map(|node_id: &u32| self.nodes.get(node_id).unwrap())
+                        .map(|node: &Node| node.evaluate(&reader, None))
+                        .collect_into_vec(&mut results);
+                }
+                
+                let mut writer = ret.write();
+                for (i, result) in results.into_iter().enumerate() {
+                    let node_id = wave[i];
+                    for (j, val) in result.into_iter().enumerate() {
+                        writer.insert(NodeOutputRef {
+                            from_node_id: node_id as u32,
+                            node_output_index: j as u8,
+                        }, val);
+                    }
+                }
+            }
+        });
+
+        return Ok(ret.into_inner());
     }
 }
