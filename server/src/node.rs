@@ -70,61 +70,14 @@ mod tests {
     use proton_shared::node_value::*;
     use proton_shared::NODE_DEF_REGISTRY;
 
-    macro_rules! map(
-        { $($key:expr => $value:expr),+ } => {
-            {
-                let mut m = ::std::collections::HashMap::new();
-                $(
-                    m.insert($key, $value);
-                )+
-                m
-            }
-         };
-    );
-
     #[test]
     fn evaluates_function() {
-        NODE_DEF_REGISTRY.register("test_def".to_owned(), NodeDef {
-            desc: NodeDefBasicDescription {
-                name: "Add".to_string(),
-                description: "Adds two values together".to_string(),
-            },
-            inputs: vec![
-                NodeInputDef {
-                    desc: NodeDefBasicDescription {
-                        name: "input 1".to_string(),
-                        description: "input 1".to_string()
-                    },
-                    allowed_types: vec![NodeValueType::Count],
-                    required: true,
-                },
-                NodeInputDef {
-                    desc: NodeDefBasicDescription {
-                        name: "input 2".to_string(),
-                        description: "input 2".to_string()
-                    },
-                    allowed_types: vec![NodeValueType::Count],
-                    required: true,
-                }
-            ],
-            output: vec![
-                NodeOutputDef {
-                    desc: NodeDefBasicDescription {
-                        name: "Sum".to_string(),
-                        description: "The sum of the two input value".to_string()
-                    },
-                    output_type: NodeValueType::Count,
-                }
-            ],
-            runner: NodeDefRunner::Function(|inputs: Vec<&NodeValue>| {
-                if let NodeValue::Count(count_1) = inputs[0] {
-                    if let NodeValue::Count(count_2) = inputs[1] {
-                        return vec![NodeValue::Count(count_1 + count_2)];
-                    }
-                }
-                panic!("Incorrect input types");
-            }),
-        });
+        NODE_DEF_REGISTRY.register(
+            "test_def".to_owned(), 
+            node_def_from_fn!(|count_1: i64, count_2: i64| -> (i64) {
+                return vec![NodeValue::Count(count_1 + count_2)];
+            }));
+
         let node = super::Node {
             id: 1,
             def_name: "test_def".to_owned(),
