@@ -1,5 +1,5 @@
 use super::node_def::NodeDef;
-use parking_lot::{RwLock, RwLockReadGuard, MappedRwLockReadGuard};
+use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::collections::HashMap;
 
 pub struct NodeDefRegistry {

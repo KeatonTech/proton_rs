@@ -34,14 +34,14 @@ impl Node {
         let def = NODE_DEF_REGISTRY.get_def(&self.def_name);
         match &def.runner {
             NodeDefRunner::Executor(ctor) => Some(ctor()),
-            _ => None
+            _ => None,
         }
     }
 
     pub fn evaluate(
-        &self, 
-        evaluated_outputs: &HashMap<NodeOutputRef, NodeValue>, 
-        executor: Option<Box<dyn NodeExecutor>>
+        &self,
+        evaluated_outputs: &HashMap<NodeOutputRef, NodeValue>,
+        executor: &Option<Box<dyn NodeExecutor>>,
     ) -> Vec<NodeValue> {
         let mut input_vals = Vec::<&NodeValue>::with_capacity(self.inputs.len());
         for input in &self.inputs {
@@ -55,39 +55,38 @@ impl Node {
         let def = NODE_DEF_REGISTRY.get_def(&self.def_name);
         match &def.runner {
             NodeDefRunner::Function(func) => func(input_vals),
-            NodeDefRunner::Executor(_) => executor.unwrap().execute(input_vals),
+            NodeDefRunner::Executor(_) => executor.as_ref().unwrap().execute(input_vals),
             NodeDefRunner::OutputDevice(od) => {
                 (od.run)(input_vals);
                 vec![]
-            },
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use proton_shared::node_def::*;
-    use proton_shared::node_value::*;
-    use proton_shared::NODE_DEF_REGISTRY;
     use super::*;
+    use proton_shared::NODE_DEF_REGISTRY;
 
     #[test]
     fn evaluates_function() {
         NODE_DEF_REGISTRY.reset();
         NODE_DEF_REGISTRY.register(
-            "test_def".to_owned(), 
+            "test_def".to_owned(),
             node_def_from_fn!(|count_1: i64, count_2: i64| -> (i64) {
                 return vec![NodeValue::Count(count_1 + count_2)];
-            }));
+            }),
+        );
 
-        let node = make_node!{
+        let node = make_node! {
             1: test_def[
                 i64{1},
                 Wire{2, 0}
             ]
         };
-        let map = map!{super::NodeOutputRef {from_node_id: 2, node_output_index: 0} => NodeValue::Count(2)};
-        let result = node.evaluate(&map, None);
+        let map = map! {super::NodeOutputRef {from_node_id: 2, node_output_index: 0} => NodeValue::Count(2)};
+        let result = node.evaluate(&map, &None);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], NodeValue::Count(3));
     }

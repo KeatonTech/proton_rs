@@ -138,6 +138,10 @@ macro_rules! node_def_from_fn {
         }
     };
 
+    (|| -> ($($o:ident),+) $body:block) => {
+        node_def_from_fn!(| | -> ($($o),+) $body);
+    };
+
     (fn $fname:ident($($name:ident: $type:ident),*) -> ($($o:ident),+) $body:block) => {
         NodeDef {
             desc: NodeDefBasicDescription {

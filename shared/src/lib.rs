@@ -5,11 +5,10 @@ extern crate strum_macros;
 extern crate lazy_static;
 
 pub mod node_def;
-pub mod node_value;
 mod node_def_registry;
+pub mod node_value;
 
 lazy_static! {
-    pub static ref NODE_DEF_REGISTRY: node_def_registry::NodeDefRegistry = {
-        node_def_registry::NodeDefRegistry::new()
-    };
+    pub static ref NODE_DEF_REGISTRY: node_def_registry::NodeDefRegistry =
+        { node_def_registry::NodeDefRegistry::new() };
 }

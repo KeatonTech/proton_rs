@@ -6,8 +6,8 @@ extern crate strum_macros;
 #[macro_use]
 pub mod test_macros;
 
-pub mod node;
 pub mod compute_graph;
+pub mod node;
 
 fn main() {
     println!("Hello, world!");
