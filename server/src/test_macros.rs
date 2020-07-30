@@ -56,8 +56,8 @@ macro_rules! node_input_def_from_arg {
 
 /// Makes a list of NodeValueInputs based on function args.
 macro_rules! node_input_def_from_args {
-    ($($name:ident: $type:ident),+) => {vec![
-        $(node_input_def_from_arg!($name: $type)),+
+    ($($name:ident: $type:ident),*) => {vec![
+        $(node_input_def_from_arg!($name: $type)),*
     ]};
 }
 
@@ -110,23 +110,35 @@ macro_rules! wrap_node_function {
             wrap_node_function!(@body {$body} inputs $($name: $type),+ 0)
         }
     };
+
+    (fn $fname:ident( ) -> $o:ty $body:block) => {
+        fn $fname(_inputs: Vec<&NodeValue>) -> $o {
+            $body
+        }
+    };
+
+    (| | $body:block) => {
+        |_inputs: Vec<&NodeValue>| {
+            $body
+        }
+    };
 }
 
 /// Builds a NodeDef with a function runner from a lambda function.
 macro_rules! node_def_from_fn {
-    (|$($name:ident: $type:ident),+| -> ($($o:ident),+) $body:block) => {
+    (|$($name:ident: $type:ident),*| -> ($($o:ident),+) $body:block) => {
         NodeDef {
             desc: NodeDefBasicDescription {
                 name: "Test Node".to_string(),
                 description: "Test Description".to_string(),
             },
-            inputs: node_input_def_from_args!($($name: $type),+),
+            inputs: node_input_def_from_args!($($name: $type),*),
             output: node_output_def_from_tuple!($($o),+),
-            runner: NodeDefRunner::Function(wrap_node_function!(|$($name: $type),+| $body))
+            runner: NodeDefRunner::Function(wrap_node_function!(|$($name: $type),*| $body))
         }
     };
 
-    (fn $fname:ident($($name:ident: $type:ident),+) -> ($($o:ident),+) $body:block) => {
+    (fn $fname:ident($($name:ident: $type:ident),*) -> ($($o:ident),+) $body:block) => {
         NodeDef {
             desc: NodeDefBasicDescription {
                 name: stringify!($fname).to_string(),
@@ -150,12 +162,12 @@ macro_rules! make_node {
     (@input $type:ident{$val:literal}) => {
         NodeInput::Const(node_value_of!($val: $type))
     };
-    ($id:literal: $def:ident[$($type:ident{$($arg:literal),+}),+]) => {
+    ($id:literal: $def:ident[$($type:ident{$($arg:literal),+}),*]) => {
         Node {
             id: $id,
             def_name: stringify!($def).to_string(),
             inputs: vec![
-                $(make_node!(@input $type{$($arg),+})),+
+                $(make_node!(@input $type{$($arg),+})),*
             ]
         }
     };
@@ -163,9 +175,9 @@ macro_rules! make_node {
 
 /// Instantiates one or more nodes with Ids, defs, and inputs.
 macro_rules! make_nodes {
-    ($($id:literal: $def:ident[$($type:ident{$($arg:literal),+}),+]),+) => {
+    ($($id:literal: $def:ident[$($type:ident{$($arg:literal),+}),*]),+) => {
         vec![
-            $(make_node!($id: $def[$($type{$($arg),+}),+])),+
+            $(make_node!($id: $def[$($type{$($arg),+}),*])),+
         ]
     };
 }
