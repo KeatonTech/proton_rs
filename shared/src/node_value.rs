@@ -3,12 +3,24 @@
 /// of most monitors.
 pub type NodeColor = (u16, u16, u16, u16);
 
+/// Type alias for Trigger booleans
+pub type TriggerSignal = bool;
+
+/// Type alias for 1D shader program indices.
+pub type Shader1DProgramId = u16;
+
+/// Type alias for 2D shader program indices.
+pub type Shader2DProgramId = u16;
+
+/// Type alias for 3D shader program indices.
+pub type Shader3DProgramId = u16;
+
 /// Proton-specific data type representation.
 #[derive(Debug, EnumDiscriminants, PartialEq, Clone)]
 #[strum_discriminants(name(NodeValueType))]
 pub enum NodeValue {
     /// Stateless value, acts as a way of kicking off an action.
-    Trigger(),
+    Trigger(TriggerSignal),
 
     /// Boolean value, used to switch something on or off
     Toggle(bool),
@@ -40,13 +52,13 @@ pub enum NodeValue {
 
     /// Shader program with a 1-dimensional positional input. Stores the index of the program,
     /// not the program itself, so that this value can be comparable and clonable.
-    Shader1D(u16),
+    Shader1D(Shader1DProgramId),
 
     /// Shader program with a 2-dimensional positional input. Stores the index of the program,
     /// not the program itself, so that this value can be comparable and clonable.
-    Shader2D(u16),
+    Shader2D(Shader2DProgramId),
 
     /// Shader program with a 3-dimensional positional input. Stores the index of the program,
     /// not the program itself, so that this value can be comparable and clonable.
-    Shader3D(u16),
+    Shader3D(Shader3DProgramId),
 }

@@ -37,7 +37,7 @@ pub struct ComputeGraph {
 impl ComputeGraph {
 
     /// Creates a new ComputeGraph with a collection of Nodes.
-    pub fn new(nodes_list: &mut dyn Iterator<Item = Node>) -> ComputeGraph {
+    pub fn new(nodes_list: Vec<Node>) -> ComputeGraph {
         let mut nodes = HashMap::new();
         for node in nodes_list {
             nodes.insert(node.id, node);
@@ -99,27 +99,31 @@ impl ComputeGraph {
         let dep_graph = self.build_deps_graph();
 
         // Collect that map into waves.
-        let mut nodes_in_any_wave = HashSet::<u32>::with_capacity(self.nodes.len());
+        let mut nodes_in_prev_wave = HashSet::<u32>::with_capacity(self.nodes.len());
+        let mut nodes_in_this_wave = HashSet::<u32>::with_capacity(self.nodes.len());
         let mut waves = Vec::<Vec<u32>>::new();
         let mut max_parallel = 1;
 
-        while nodes_in_any_wave.len() != self.nodes.len() {
+        while nodes_in_prev_wave.len() != self.nodes.len() {
             let mut wave = Vec::<u32>::new();
 
             'outer: for (node_id, deps) in dep_graph.iter() {
-                if nodes_in_any_wave.contains(node_id) {
-                    break;
+                if nodes_in_prev_wave.contains(node_id) {
+                    continue;
                 }
 
                 for dep in deps {
-                    if !nodes_in_any_wave.contains(&dep) {
-                        break 'outer;
+                    if !nodes_in_prev_wave.contains(&dep) {
+                        continue 'outer;
                     }
                 }
 
-                nodes_in_any_wave.insert(*node_id);
+                nodes_in_this_wave.insert(*node_id);
                 wave.push(*node_id);
             }
+
+            nodes_in_prev_wave.extend(nodes_in_this_wave.iter());
+            nodes_in_this_wave.clear();
 
             if wave.len() == 0 {
                 // An empty wave means there's a cycle.
@@ -188,5 +192,42 @@ impl ComputeGraph {
         });
 
         return Ok(ret.into_inner());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proton_shared::node_def::*;
+    use proton_shared::node_value::*;
+    use proton_shared::NODE_DEF_REGISTRY;
+    use crate::node::*;
+    use super::*;
+
+    #[test]
+    fn executes_simple_graphs() {
+        NODE_DEF_REGISTRY.reset();
+
+        NODE_DEF_REGISTRY.register(
+            "output_1".to_owned(), 
+            node_def_from_fn!(| | -> (i64) {
+                return vec![NodeValue::Count(1)];
+            }));
+        NODE_DEF_REGISTRY.register(
+            "add".to_owned(), 
+            node_def_from_fn!(|count_1: i64, count_2: i64| -> (i64) {
+                return vec![NodeValue::Count(count_1 + count_2)];
+            }));
+
+        let nodes = make_nodes!{
+            1: output_1[],
+            2: add[Wire{1, 0}, i64{3}],
+            3: add[Wire{1, 0}, i64{5}],
+            4: add[Wire{2, 0}, Wire{3, 0}]
+        };
+        let mut graph = ComputeGraph::new(nodes);
+
+        graph.prepare(2);
+        let result = graph.execute().unwrap();
+        assert_eq!(result.get(&NodeOutputRef{from_node_id: 4, node_output_index: 0}).unwrap(), &NodeValue::Count(10));
     }
 }

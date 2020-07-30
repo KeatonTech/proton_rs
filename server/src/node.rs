@@ -11,7 +11,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct Node {
     pub id: u32,
-    def_name: String,
+    pub def_name: String,
 
     /// Order of inputs must match order in NodeDef.
     pub inputs: Vec<NodeInput>,
@@ -73,6 +73,7 @@ mod tests {
 
     #[test]
     fn evaluates_function() {
+        NODE_DEF_REGISTRY.reset();
         NODE_DEF_REGISTRY.register(
             "test_def".to_owned(), 
             node_def_from_fn!(|count_1: i64, count_2: i64| -> (i64) {
