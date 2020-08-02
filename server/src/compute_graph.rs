@@ -1,6 +1,7 @@
 use super::node::{Node, NodeInput, NodeInputDiscriminants, NodeOutputRef};
 use parking_lot::RwLock;
 use proton_shared::node_def::NodeExecutor;
+use proton_shared::node_def_registry::NodeDefRegistry;
 use proton_shared::node_value::*;
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -26,6 +27,7 @@ pub enum ComputeGraphState {
 /// can be automatically parallelized because Nodes cannot have side effects.
 pub struct ComputeGraph {
     nodes: HashMap<u32, Node>,
+    registry: NodeDefRegistry,
     state: ComputeGraphState,
 
     /// Waves represent 'waves' of processing, where each Node in a wave relies
@@ -43,13 +45,14 @@ pub struct ComputeGraph {
 
 impl ComputeGraph {
     /// Creates a new ComputeGraph with a collection of Nodes.
-    pub fn new(nodes_list: Vec<Node>) -> ComputeGraph {
+    pub fn new(node_def_registry: NodeDefRegistry, nodes_list: Vec<Node>) -> ComputeGraph {
         let mut nodes = HashMap::new();
         for node in nodes_list {
             nodes.insert(node.id, node);
         }
         ComputeGraph {
             nodes: nodes,
+            registry: node_def_registry,
             state: ComputeGraphState::Unprepared,
             waves: None,
             executors: None,
@@ -98,12 +101,19 @@ impl ComputeGraph {
         );
 
         // Prepare each node.
+        let active_outputs_per_node = self.compute_active_outputs();
         let nodes = &self.nodes;
         self.executors = self.runner.as_ref().unwrap().install(|| {
             return Some(
                 nodes
                     .par_iter()
-                    .map(|(id, node)| (*id, node.prepare()))
+                    .map(|(id, node)| {
+                        (
+                            *id,
+                            node.with_registry(&self.registry)
+                                .prepare(active_outputs_per_node.get(id).unwrap()),
+                        )
+                    })
                     .collect(),
             );
         });
@@ -190,6 +200,45 @@ impl ComputeGraph {
             .collect()
     }
 
+    /// Determines which outputs of each Node are actively in use.
+    fn compute_active_outputs(&self) -> HashMap<u32, Vec<bool>> {
+        let all_wires = self.nodes.values().flat_map(|node| {
+            node.inputs
+                .iter()
+                .filter(|input| {
+                    NodeInputDiscriminants::from(*input) == NodeInputDiscriminants::Wire
+                })
+                .map(|input| -> &NodeOutputRef {
+                    if let NodeInput::Wire(wire) = input {
+                        wire
+                    } else {
+                        panic!();
+                    }
+                })
+        });
+
+        let mut result: HashMap<u32, Vec<bool>> = self
+            .nodes
+            .values()
+            .map(|node| {
+                (
+                    node.id,
+                    vec![false; node.with_registry(&self.registry).get_output_count()],
+                )
+            })
+            .collect();
+
+        for wire in all_wires {
+            *result
+                .get_mut(&wire.from_node_id)
+                .unwrap()
+                .get_mut(wire.node_output_index as usize)
+                .unwrap() = true;
+        }
+
+        return result;
+    }
+
     /// Executes the graph using at most the specified number of threads.
     /// Returns None if execution could not complete.
     pub fn execute(&self) -> Result<HashMap<NodeOutputRef, NodeValue>, &str> {
@@ -209,6 +258,7 @@ impl ComputeGraph {
                             self.nodes
                                 .get(node_id)
                                 .unwrap()
+                                .with_registry(&self.registry)
                                 .evaluate(&reader, executors.get(&node_id).unwrap())
                         })
                         .collect_into_vec(&mut results);
@@ -238,19 +288,19 @@ mod tests {
     use super::*;
     use crate::node::*;
     use proton_shared::node_def::*;
-    use proton_shared::NODE_DEF_REGISTRY;
+    use proton_shared::node_def_registry::NodeDefRegistry;
 
     #[test]
     fn executes_simple_graphs() {
-        NODE_DEF_REGISTRY.reset();
+        let registry = NodeDefRegistry::new();
 
-        NODE_DEF_REGISTRY.register(
+        registry.register(
             "output_1".to_owned(),
             node_def_from_fn!(|| -> (i64) {
                 return vec![NodeValue::Count(1)];
             }),
         );
-        NODE_DEF_REGISTRY.register(
+        registry.register(
             "add".to_owned(),
             node_def_from_fn!(|count_1: i64, count_2: i64| -> (i64) {
                 return vec![NodeValue::Count(count_1 + count_2)];
@@ -263,7 +313,7 @@ mod tests {
             3: add[Wire{1, 0}, i64{5}],
             4: add[Wire{2, 0}, Wire{3, 0}]
         };
-        let mut graph = ComputeGraph::new(nodes);
+        let mut graph = ComputeGraph::new(registry, nodes);
 
         graph.prepare(2);
         let result = graph.execute().unwrap();

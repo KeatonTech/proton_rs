@@ -11,7 +11,7 @@ use std::fmt;
 pub struct NodeDef {
     pub desc: NodeDefBasicDescription,
     pub inputs: Vec<NodeInputDef>,
-    pub output: Vec<NodeOutputDef>,
+    pub outputs: Vec<NodeOutputDef>,
     pub runner: NodeDefRunner,
 }
 
@@ -69,5 +69,6 @@ impl std::cmp::PartialEq for NodeDefRunner {
 }
 
 pub trait NodeExecutor: Send + Sync {
+    fn prepare(&self, enabled_outputs: &Vec<bool>);
     fn execute(&self, inputs: Vec<&NodeValue>) -> Vec<NodeValue>;
 }

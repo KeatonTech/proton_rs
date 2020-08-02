@@ -1,6 +1,6 @@
 use proton_shared::node_def::*;
+use proton_shared::node_def_registry::NodeDefRegistry;
 use proton_shared::node_value::*;
-use proton_shared::NODE_DEF_REGISTRY;
 use std::collections::HashMap;
 
 /// Instance of an executable function as represented in a compute graph.
@@ -29,13 +29,43 @@ pub struct NodeOutputRef {
     pub node_output_index: u8,
 }
 
+pub struct NodeWithRegistry<'a> {
+    node: &'a Node,
+    registry: &'a NodeDefRegistry,
+}
+
 impl Node {
-    pub fn prepare(&self) -> Option<Box<dyn NodeExecutor>> {
-        let def = NODE_DEF_REGISTRY.get_def(&self.def_name);
-        match &def.runner {
+    /// Most Node functionality can only be processed using a NodeDefRegistry,
+    /// which gives the Node access to the underlying implementation of its
+    /// node_def. This method allows the registry to be passed in once instead
+    /// of requiring it as an arg for every single function.
+    pub fn with_registry<'a>(&'a self, registry: &'a NodeDefRegistry) -> NodeWithRegistry<'a> {
+        NodeWithRegistry {
+            node: self,
+            registry: registry,
+        }
+    }
+}
+
+impl<'a> NodeWithRegistry<'a> {
+    pub fn get_input_count(&self) -> usize {
+        self.registry.get_def(&self.node.def_name).inputs.len()
+    }
+
+    pub fn get_output_count(&self) -> usize {
+        self.registry.get_def(&self.node.def_name).outputs.len()
+    }
+
+    pub fn prepare(&self, enabled_outputs: &Vec<bool>) -> Option<Box<dyn NodeExecutor>> {
+        let def = self.registry.get_def(&self.node.def_name);
+        let maybe_executor = match &def.runner {
             NodeDefRunner::Executor(ctor) => Some(ctor()),
             _ => None,
-        }
+        };
+        if !maybe_executor.is_none() {
+            maybe_executor.as_ref().unwrap().prepare(enabled_outputs);
+        };
+        return maybe_executor;
     }
 
     pub fn evaluate(
@@ -43,8 +73,8 @@ impl Node {
         evaluated_outputs: &HashMap<NodeOutputRef, NodeValue>,
         executor: &Option<Box<dyn NodeExecutor>>,
     ) -> Vec<NodeValue> {
-        let mut input_vals = Vec::<&NodeValue>::with_capacity(self.inputs.len());
-        for input in &self.inputs {
+        let mut input_vals = Vec::<&NodeValue>::with_capacity(self.node.inputs.len());
+        for input in &self.node.inputs {
             let input_val = match input {
                 NodeInput::Const(val) => val,
                 NodeInput::Wire(output_ref) => evaluated_outputs.get(&output_ref).unwrap(),
@@ -52,7 +82,7 @@ impl Node {
             input_vals.push(input_val);
         }
 
-        let def = NODE_DEF_REGISTRY.get_def(&self.def_name);
+        let def = self.registry.get_def(&self.node.def_name);
         match &def.runner {
             NodeDefRunner::Function(func) => func(input_vals),
             NodeDefRunner::Executor(_) => executor.as_ref().unwrap().execute(input_vals),
@@ -67,12 +97,12 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proton_shared::NODE_DEF_REGISTRY;
+    use proton_shared::node_def_registry::NodeDefRegistry;
 
     #[test]
     fn evaluates_function() {
-        NODE_DEF_REGISTRY.reset();
-        NODE_DEF_REGISTRY.register(
+        let registry = NodeDefRegistry::new();
+        registry.register(
             "test_def".to_owned(),
             node_def_from_fn!(|count_1: i64, count_2: i64| -> (i64) {
                 return vec![NodeValue::Count(count_1 + count_2)];
@@ -86,7 +116,7 @@ mod tests {
             ]
         };
         let map = map! {super::NodeOutputRef {from_node_id: 2, node_output_index: 0} => NodeValue::Count(2)};
-        let result = node.evaluate(&map, &None);
+        let result = node.with_registry(&registry).evaluate(&map, &None);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], NodeValue::Count(3));
     }

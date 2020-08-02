@@ -133,7 +133,7 @@ macro_rules! node_def_from_fn {
                 description: "Test Description".to_string(),
             },
             inputs: node_input_def_from_args!($($name: $type),*),
-            output: node_output_def_from_tuple!($($o),+),
+            outputs: node_output_def_from_tuple!($($o),+),
             runner: NodeDefRunner::Function(wrap_node_function!(|$($name: $type),*| $body))
         }
     };
@@ -149,7 +149,7 @@ macro_rules! node_def_from_fn {
                 description: concat!("Automatic description of node ", stringify!($fname)).to_string(),
             },
             inputs: node_input_def_from_args!($($name: $type),+),
-            output: node_output_def_from_tuple!($($o),+),
+            outputs: node_output_def_from_tuple!($($o),+),
             runner: NodeDefRunner::Function(wrap_node_function!(|$($name: $type),+| $body))
         }
     };
